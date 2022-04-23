@@ -1,7 +1,9 @@
 package com.example.projectalexandra
 
+import java.io.Serializable
 
-class IndexedWord {
+
+class IndexedWord : Serializable {
 
     var word : String
     var timestamp : Int

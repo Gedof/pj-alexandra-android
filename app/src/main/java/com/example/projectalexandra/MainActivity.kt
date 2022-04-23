@@ -1,40 +1,60 @@
 package com.example.projectalexandra
 
 import android.graphics.Color
-import androidx.appcompat.app.AppCompatActivity
+import android.media.MediaPlayer
 import android.os.Bundle
-import android.view.View
+import android.os.Handler
+import android.os.Message
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.MenuItem
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.SeekBar
-import android.widget.TextView
+import androidx.appcompat.app.AppCompatActivity
 import com.google.android.flexbox.FlexboxLayout
 import kotlinx.android.synthetic.main.activity_main.*
-import java.sql.Timestamp
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var seekBar: SeekBar
+    private lateinit var edtSearch : EditText
+    private var mp : MediaPlayer? = null
+    private var isPlaying = false
+    private var totalTimeMp : Int = 0
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        val itemAudio = intent.getSerializableExtra("itemAudio") as? ItemAudio
+
+        getSupportActionBar()?.setDisplayHomeAsUpEnabled(true)
+        getSupportActionBar()?.title = itemAudio?.nome
+
+        mp = MediaPlayer.create(this,R.raw.audio_1)
+        totalTimeMp = mp!!.duration
+
 
         seekBar = findViewById(R.id.seekBar)
+        edtSearch = findViewById(R.id.edtSearch)
+        var searchResults : MutableList<IdxWordView> = mutableListOf()
+        var currentResult = 0
 
-        var text = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam vitae ante a risus pulvinar rutrum. Donec porttitor varius neque, nec egestas quam tempor eget. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Etiam interdum quam ante. Donec nec finibus nisl. Mauris aliquam tempor tempor. Donec suscipit lacus vel neque consequat malesuada. Phasellus ut eros sed tortor euismod aliquet eu et lectus. Nam fermentum, lorem sed facilisis faucibus, lorem massa imperdiet libero, et pellentesque lectus nunc sed felis. Donec justo velit, efficitur eu semper id, malesuada eget sapien. Nulla ornare eu tortor ut elementum. Nunc ipsum dui, lobortis in rutrum eu, ultricies id nibh. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Nunc commodo scelerisque orci. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam vitae ante a risus pulvinar rutrum. Donec porttitor varius neque, nec egestas quam tempor eget. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Etiam interdum quam ante. Donec nec finibus nisl. Mauris aliquam tempor tempor. Donec suscipit lacus vel neque consequat malesuada. Phasellus ut eros sed tortor euismod aliquet eu et lectus. Nam fermentum, lorem sed facilisis faucibus, lorem massa imperdiet libero, et pellentesque lectus nunc sed felis. Donec justo velit, efficitur eu semper id, malesuada eget sapien. Nulla ornare eu tortor ut elementum. Nunc ipsum dui, lobortis in rutrum eu, ultricies id nibh. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Nunc commodo scelerisque orci."
 
-        var texts = text.split(" ");
-
-        texts = texts.map{t -> "$t " }
 
         var totalTime = 0
 
-        var words = texts.map{t ->
-            var iw = IndexedWord(t, totalTime, 2000)
-            totalTime += 2000
-            iw
-        }
+        totalTime = itemAudio!!.idxWords!!.last().timestamp + itemAudio!!.idxWords!!.last().duration
+
+        if (totalTime < totalTimeMp) totalTime = totalTimeMp
+
+
+        //itemAudio?.idxWords?.forEach { w ->
+        //    totalTime += w.duration
+        //}
+
+        var words = itemAudio?.idxWords as List<IndexedWord>
 
         seekBar.max = totalTime
         seekBar.progress = 0
@@ -47,6 +67,16 @@ class MainActivity : AppCompatActivity() {
         )
 
         flexbox.removeAllViews()
+
+        words = words.map {w ->
+            var wordStrings = w.word.split(" ");
+
+            var wordIdxs = wordStrings.map {ws ->
+                IndexedWord("${ws.replace(" ","")} ", w.timestamp, w.duration)
+            }
+
+            wordIdxs
+        }.flatten()
 
         words.forEach{w ->
             var txtV = IdxWordView(this)
@@ -66,50 +96,191 @@ class MainActivity : AppCompatActivity() {
             flexbox.addView(txtV)
         }
 
+        var nextCheck:Long = 0
         seekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
 
             override fun onProgressChanged(seekBar: SeekBar, i: Int, b: Boolean) {
-                txtTime.text = String.format(
-                    "%02d:%02d",
-                    TimeUnit.MILLISECONDS.toMinutes(i.toLong()),
-                    TimeUnit.MILLISECONDS.toSeconds(i.toLong()) -
-                            TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(i.toLong()))
-                )
+                if (b) {
+                    if (mp!!.duration >= i) {
+                        mp?.seekTo(i)
+                    } else {
+                        mp?.seekTo(mp!!.duration)
+                        mp?.pause()
+                        btnPlay.setImageResource(R.drawable.ic_play_arrow_black_24dp)
+                        isPlaying = false
+                    }
+                }
 
-                var currentTexts : MutableList<IdxWordView> = mutableListOf()
+                if (true || nextCheck <= System.currentTimeMillis()) {
+
+                    txtTime.text = String.format(
+                        "%02d:%02d",
+                        TimeUnit.MILLISECONDS.toMinutes(i.toLong()),
+                        TimeUnit.MILLISECONDS.toSeconds(i.toLong()) -
+                                TimeUnit.MINUTES.toSeconds(TimeUnit.MILLISECONDS.toMinutes(i.toLong()))
+                    )
+
+                    var currentTexts: MutableList<IdxWordView> = mutableListOf()
+
+                    for (x in 0 until (flexbox as ViewGroup).childCount) {
+                        var child = (flexbox as ViewGroup).getChildAt(x)
+                        if (child is IdxWordView) {
+                            child.setBackgroundColor(Color.TRANSPARENT)
+                            if (i >= child.timestamp && i < (child.timestamp + child.duration)) {
+                                //currentTexts.add(child)
+                                child.setBackgroundColor(Color.YELLOW)
+                                child.parent.requestChildFocus(child, child)
+                            }
+                        }
+                    }
+
+                    //nextCheck = System.currentTimeMillis() + 200
+                    //currentTexts.forEach{ct ->
+
+                    //}
+                }
+
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar) {}
+        })
+
+
+        edtSearch.addTextChangedListener(object : TextWatcher{
+            override fun afterTextChanged(s: Editable?) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+
+                searchResults.clear()
+                currentResult = 0
 
                 for(x in 0 until (flexbox as ViewGroup).childCount){
                     var child = (flexbox as ViewGroup).getChildAt(x)
                     if (child is IdxWordView){
                         child.setBackgroundColor(Color.TRANSPARENT)
-                        if(i >= child.timestamp && i < (child.timestamp + child.duration)){
-                            currentTexts.add(child)
+                        if(!s.isNullOrBlank() && child.text.contains(s,true)){
+                            searchResults.add(child)
                         }
                     }
                 }
 
-                currentTexts.forEach{ct ->
-                    ct.setBackgroundColor(Color.YELLOW)
-                    ct.parent.requestChildFocus(ct,ct)
+                if (searchResults.size > 0){
+
+                    searchResults[0].setBackgroundColor(Color.YELLOW)
+                    searchResults[0].parent.requestChildFocus(searchResults[0],searchResults[0])
+                    searchResults[0].performClick()
+
+                    currentResult = 1
+
+                    txtResult.text = "1 de " + searchResults.size
                 }
 
-
-            }
-
-            override fun onStartTrackingTouch(seekBar: SeekBar) {
-                // Do something
-
-            }
-
-            override fun onStopTrackingTouch(seekBar: SeekBar) {
-                // Do something
-
+                if(s.isNullOrBlank()){
+                    searchResults.clear()
+                    currentResult = 0
+                    txtResult.text = "0 de 0"
+                }
             }
         })
 
+        btnNext.setOnClickListener {
+            if (currentResult < searchResults.size){
+                currentResult++
+                var index = currentResult-1
+
+                searchResults[index].setBackgroundColor(Color.YELLOW)
+                searchResults[index].parent.requestChildFocus(searchResults[index],searchResults[index])
+                searchResults[index].performClick()
+
+                txtResult.text = "" + currentResult + " de " + searchResults.size
+            }
+        }
+
+        btnPrev.setOnClickListener {
+            if (searchResults.size > 1 && currentResult > 1){
+                currentResult--
+                var index = currentResult-1
+
+                searchResults[index].setBackgroundColor(Color.YELLOW)
+                searchResults[index].parent.requestChildFocus(searchResults[index],searchResults[index])
+                searchResults[index].performClick()
+
+                txtResult.text = "" + currentResult + " de " + searchResults.size
+            }
+        }
+
+        //----
+
+        btnPlay.setOnClickListener {
+            if (!isPlaying || !mp!!.isPlaying){
+                if(seekBar.progress <= mp!!.duration) {
+                    mp?.start()
+                    btnPlay.setImageResource(R.drawable.ic_pause_black_24dp)
+                    isPlaying = true
+                }
+            }else{
+                mp?.pause()
+                btnPlay.setImageResource(R.drawable.ic_play_arrow_black_24dp)
+                isPlaying = false
+            }
+        }
+
+        mp?.setOnCompletionListener {
+            mp?.pause()
+            btnPlay.setImageResource(R.drawable.ic_play_arrow_black_24dp)
+            isPlaying = false
+        }
+
+        Thread(Runnable {
+            while (mp != null){
+                try {
+                    if (mp!!.isPlaying){
+                        var msg = Message()
+                        msg.what = mp!!.currentPosition
+                        handler.sendMessage(msg)
+                    }
+                    Thread.sleep(100)
+                } catch (e : InterruptedException){}
+            }
+        }).start()
+    }
+
+    var handler = object : Handler() {
+        override fun handleMessage(msg: Message) {
+            var currentPosition = msg.what
+
+            seekBar.progress = currentPosition
+        }
     }
 
     fun movePlayer(timestamp: Int){
+        if (mp!!.duration >= timestamp) {
+            mp?.seekTo(timestamp)
+        } else {
+            mp?.seekTo(mp!!.duration)
+            mp?.pause()
+            btnPlay.setImageResource(R.drawable.ic_play_arrow_black_24dp)
+            isPlaying = false
+        }
         seekBar.progress = timestamp
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        when (item.itemId){
+            android.R.id.home -> {
+                mp?.release()
+                mp = null
+                finish()
+            }
+        }
+        return true;
+    }
+
+    override fun onStop(){
+        mp?.release()
+        mp = null
+        super.onStop()
     }
 }
